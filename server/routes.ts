@@ -45,11 +45,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { bucketName, region, accessKeyId, secretAccessKey } = req.body;
       
       // Configure AWS SDK
-      const s3 = new AWS.S3({
+      const s3Config: any = {
         accessKeyId,
         secretAccessKey,
         region,
-      });
+      };
+      
+      // Add custom endpoint if provided
+      if (req.body.endpoint) {
+        s3Config.endpoint = req.body.endpoint;
+        s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
+      }
+      
+      const s3 = new AWS.S3(s3Config);
 
       // Test connection by listing bucket contents
       await s3.headBucket({ Bucket: bucketName }).promise();
@@ -73,11 +81,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Configure AWS SDK
-      const s3 = new AWS.S3({
+      const s3Config: any = {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
         region: config.region,
-      });
+      };
+      
+      // Add custom endpoint if configured
+      if (config.endpoint) {
+        s3Config.endpoint = config.endpoint;
+        s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
+      }
+      
+      const s3 = new AWS.S3(s3Config);
 
       // List all .md files in the bucket
       const listParams = {

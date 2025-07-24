@@ -27,6 +27,7 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
     defaultValues: {
       bucketName: "",
       region: "us-east-1",
+      endpoint: "",
       accessKeyId: "",
       secretAccessKey: "",
     },
@@ -44,9 +45,10 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
   // Update form when s3Config is loaded
   if (s3Config && !form.getValues().bucketName) {
     form.reset({
-      bucketName: s3Config.bucketName,
-      region: s3Config.region,
-      accessKeyId: s3Config.accessKeyId,
+      bucketName: s3Config.bucketName || "",
+      region: s3Config.region || "",
+      endpoint: s3Config.endpoint || "",
+      accessKeyId: s3Config.accessKeyId || "",
       secretAccessKey: "", // Don't prefill password
     });
   }
@@ -121,10 +123,10 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
 
   const handleTestConnection = () => {
     const formData = form.getValues();
-    if (!formData.bucketName || !formData.accessKeyId || !formData.secretAccessKey) {
+    if (!formData.bucketName || !formData.accessKeyId || !formData.secretAccessKey || !formData.region) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all S3 configuration fields",
+        description: "Please fill in bucket name, region, access key, and secret key",
         variant: "destructive",
       });
       return;
@@ -166,23 +168,35 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
           
           <div>
             <Label htmlFor="region">S3 Region</Label>
-            <Select 
-              value={form.watch("region")} 
-              onValueChange={(value) => form.setValue("region", value)}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select region" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="us-east-1">us-east-1</SelectItem>
-                <SelectItem value="us-west-1">us-west-1</SelectItem>
-                <SelectItem value="us-west-2">us-west-2</SelectItem>
-                <SelectItem value="eu-west-1">eu-west-1</SelectItem>
-                <SelectItem value="eu-central-1">eu-central-1</SelectItem>
-                <SelectItem value="ap-southeast-1">ap-southeast-1</SelectItem>
-                <SelectItem value="ap-northeast-1">ap-northeast-1</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input
+              id="region"
+              placeholder="us-east-005 or your custom region"
+              {...form.register("region")}
+              className="mt-1"
+            />
+            {form.formState.errors.region && (
+              <p className="text-sm text-destructive mt-1">
+                {form.formState.errors.region.message}
+              </p>
+            )}
+          </div>
+          
+          <div>
+            <Label htmlFor="endpoint">S3 Endpoint URL (Optional)</Label>
+            <Input
+              id="endpoint"
+              placeholder="https://s3.your-provider.com (leave empty for AWS S3)"
+              {...form.register("endpoint")}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              For S3-compatible services like MinIO, DigitalOcean Spaces, etc.
+            </p>
+            {form.formState.errors.endpoint && (
+              <p className="text-sm text-destructive mt-1">
+                {form.formState.errors.endpoint.message}
+              </p>
+            )}
           </div>
           
           <div>
@@ -276,7 +290,7 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
       <div>
         <h3 className="text-sm font-semibold text-foreground mb-3">Filter by Tags</h3>
         <div className="space-y-2 max-h-48 overflow-y-auto">
-          {tags.map((tag: any) => (
+          {Array.isArray(tags) && tags.map((tag: { name: string; count: number }) => (
             <label 
               key={tag.name}
               className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-muted p-1 rounded"
@@ -291,7 +305,7 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
               </span>
             </label>
           ))}
-          {tags.length === 0 && (
+          {(!Array.isArray(tags) || tags.length === 0) && (
             <p className="text-sm text-muted-foreground italic">No tags found. Sync notes to see tags.</p>
           )}
         </div>

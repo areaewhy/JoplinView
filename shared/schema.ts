@@ -7,6 +7,7 @@ export const s3Configs = pgTable("s3_configs", {
   id: serial("id").primaryKey(),
   bucketName: text("bucket_name").notNull(),
   region: text("region").notNull(),
+  endpoint: text("endpoint"), // Custom S3-compatible endpoint URL
   accessKeyId: text("access_key_id").notNull(),
   secretAccessKey: text("secret_access_key").notNull(),
   isActive: boolean("is_active").default(true),

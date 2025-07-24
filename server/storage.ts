@@ -46,7 +46,12 @@ export class MemStorage implements IStorage {
     this.s3Configs.forEach(config => config.isActive = false);
     
     const id = this.currentS3Id++;
-    const config: S3Config = { ...insertConfig, id, isActive: true };
+    const config: S3Config = { 
+      ...insertConfig, 
+      id, 
+      isActive: true,
+      endpoint: insertConfig.endpoint || null 
+    };
     this.s3Configs.set(id, config);
     return config;
   }
@@ -79,7 +84,18 @@ export class MemStorage implements IStorage {
 
   async createNote(insertNote: InsertNote): Promise<Note> {
     const id = this.currentNoteId++;
-    const note: Note = { ...insertNote, id };
+    const note: Note = { 
+      ...insertNote, 
+      id,
+      // Ensure null instead of undefined for optional fields
+      source: insertNote.source || null,
+      author: insertNote.author || null,
+      latitude: insertNote.latitude || null,
+      longitude: insertNote.longitude || null,
+      altitude: insertNote.altitude || null,
+      completed: insertNote.completed || null,
+      tags: insertNote.tags || []
+    };
     this.notes.set(id, note);
     return note;
   }
@@ -108,13 +124,13 @@ export class MemStorage implements IStorage {
     return Array.from(this.notes.values()).filter(note =>
       note.title.toLowerCase().includes(lowercaseQuery) ||
       note.body.toLowerCase().includes(lowercaseQuery) ||
-      note.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery))
+      (note.tags && note.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)))
     );
   }
 
   async getNotesByTags(tags: string[]): Promise<Note[]> {
     return Array.from(this.notes.values()).filter(note =>
-      tags.some(tag => note.tags.includes(tag))
+      note.tags && tags.some(tag => note.tags.includes(tag))
     );
   }
 

@@ -30,7 +30,7 @@ Preferred communication style: Simple, everyday language.
 ### Key Components
 
 #### Database Schema (PostgreSQL + Drizzle)
-- **s3_configs**: Stores S3 bucket configuration (credentials, region, bucket name)
+- **s3_configs**: Stores S3 bucket configuration (credentials, region, bucket name, optional custom endpoint URL)
 - **notes**: Stores parsed Joplin notes with metadata (title, body, tags, timestamps)
 - **sync_status**: Tracks synchronization status and statistics
 
@@ -55,10 +55,11 @@ Preferred communication style: Simple, everyday language.
 
 ### External Dependencies
 
-#### AWS Integration
-- **AWS SDK**: Both v2 and v3 for S3 operations
+#### S3 Integration
+- **AWS SDK**: v2 for S3 operations with support for custom endpoints
 - **S3 Operations**: List objects, read file content, test connections
-- **Credential Management**: Secure storage of AWS access keys
+- **S3-Compatible Services**: Support for MinIO, DigitalOcean Spaces, and other S3-compatible providers
+- **Credential Management**: Secure storage of access keys and custom endpoint URLs
 
 #### Database
 - **Neon Database**: Serverless PostgreSQL provider
@@ -100,4 +101,4 @@ Preferred communication style: Simple, everyday language.
 
 **UI Architecture**: Shadcn/ui provides a modern, accessible component system that's customizable and built on proven Radix UI primitives, ensuring accessibility and consistent behavior.
 
-**S3 Integration**: Direct S3 integration allows the application to work with existing Joplin exports without requiring users to change their backup workflows.
+**S3 Integration**: Direct S3 integration supports both AWS S3 and S3-compatible services, allowing the application to work with existing Joplin exports without requiring users to change their backup workflows. Custom endpoint support enables use with MinIO, DigitalOcean Spaces, and other providers.
