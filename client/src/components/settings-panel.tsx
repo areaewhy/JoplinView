@@ -25,10 +25,10 @@ export default function SettingsPanel({ syncStatus, selectedTags, onTagsChange }
   const form = useForm<InsertS3Config>({
     resolver: zodResolver(insertS3ConfigSchema),
     defaultValues: {
-      bucketName: "",
-      region: "us-east-1",
-      endpoint: "",
-      accessKeyId: "",
+      bucketName: "temporal-joplin",
+      region: "us-east-005",
+      endpoint: "https://s3.us-east-005.backblazeb2.com",
+      accessKeyId: "005480f0c61fcfd0000000003",
       secretAccessKey: "",
     },
   });
