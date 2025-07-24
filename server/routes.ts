@@ -95,10 +95,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const s3 = new AWS.S3(s3Config);
 
-      // List all .md files in the bucket
+      // List all .md files in the bucket/bucket/.sync directory
+      const prefix = `${config.bucketName}/.sync/`;
       const listParams = {
         Bucket: config.bucketName,
-        Delimiter: '/',
+        Prefix: prefix,
       };
 
       const objects = await s3.listObjectsV2(listParams).promise();
@@ -135,8 +136,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const frontMatter = parsed.data;
           const body = parsed.content;
 
-          // Extract GUID from filename (remove .md extension)
-          const joplinId = file.Key.replace('.md', '');
+          // Extract GUID from filename (remove directory path and .md extension)
+          const joplinId = file.Key.replace(prefix, '').replace('.md', '');
           
           // Create note with parsed data
           const noteData = {
