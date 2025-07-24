@@ -95,8 +95,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const s3 = new AWS.S3(s3Config);
 
-      // List all .md files in the bucket/bucket/.sync directory
-      const prefix = `${config.bucketName}/.sync/`;
+      // List all .md files in the bucket/bucket directory
+      const prefix = `${config.bucketName}/`;
       const listParams = {
         Bucket: config.bucketName,
         Prefix: prefix,
