@@ -131,30 +131,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const data = await s3.getObject(getParams).promise();
           const content = data.Body?.toString('utf-8') || '';
           
-          // Parse front matter
-          const parsed = matter(content);
-          const frontMatter = parsed.data;
-          const body = parsed.content;
+          // First, quickly check if this is a revision file (starts with metadata immediately)
+          if (content.trim().startsWith('id:') && content.includes('type_:')) {
+            console.log(`Skipping revision file: ${file.Key}`);
+            continue;
+          }
+          
+          // Parse Joplin note format
+          const lines = content.split('\n');
+          let bodyEndIndex = -1;
+          
+          // Find where the metadata starts (look for 'id:' line)
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim().startsWith('id:')) {
+              bodyEndIndex = i - 1;
+              break;
+            }
+          }
+          
+          // Extract body (content before metadata) and metadata
+          const body = bodyEndIndex > 0 ? lines.slice(0, bodyEndIndex + 1).join('\n').trim() : '';
+          const metadataLines = bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
+          
+          // Parse metadata into object
+          const metadata: any = {};
+          for (const line of metadataLines) {
+            const trimmed = line.trim();
+            if (trimmed && trimmed.includes(':')) {
+              const colonIndex = trimmed.indexOf(':');
+              const key = trimmed.substring(0, colonIndex).trim();
+              const value = trimmed.substring(colonIndex + 1).trim();
+              metadata[key] = value;
+            }
+          }
+          
+          // Skip revisions and resources - only process actual notes
+          if (metadata.type_ !== '1') {
+            console.log(`Skipping file ${file.Key}: type ${metadata.type_} (not a note)`);
+            continue;
+          }
+          
+          // Extra check: if no body content, this might be a broken file
+          if (!body || body.trim().length === 0) {
+            console.log(`Skipping file ${file.Key}: no body content`);
+            continue;
+          }
 
           // Extract GUID from filename (remove directory path and .md extension)
           const joplinId = file.Key.replace(prefix, '').replace('.md', '');
           
+          // Extract title from body (first line) or use joplinId as fallback
+          let title = joplinId;
+          if (body) {
+            const firstLine = body.split('\n')[0].trim();
+            if (firstLine && !firstLine.startsWith('#')) {
+              title = firstLine;
+            } else if (firstLine.startsWith('#')) {
+              title = firstLine.replace(/^#+\s*/, '');
+            }
+          }
+          
           // Create note with parsed data
           const noteData = {
             joplinId,
-            title: frontMatter.title || joplinId,
-            body,
-            author: frontMatter.author || null,
-            source: frontMatter.source || null,
-            latitude: frontMatter.latitude?.toString() || null,
-            longitude: frontMatter.longitude?.toString() || null,
-            altitude: frontMatter.altitude?.toString() || null,
-            completed: frontMatter['completed?'] === 'yes' || frontMatter.completed === true || null,
-            due: frontMatter.due ? new Date(frontMatter.due) : null,
-            createdTime: frontMatter.created ? new Date(frontMatter.created) : null,
-            updatedTime: frontMatter.updated ? new Date(frontMatter.updated) : null,
+            title: title || joplinId,
+            body: body || '',
+            author: metadata.author || null,
+            source: metadata.source || null,
+            latitude: metadata.latitude || null,
+            longitude: metadata.longitude || null,
+            altitude: metadata.altitude || null,
+            completed: metadata.todo_completed === '1' || null,
+            due: metadata.todo_due && metadata.todo_due !== '0' ? new Date(parseInt(metadata.todo_due)) : null,
+            createdTime: metadata.created_time ? new Date(metadata.created_time) : null,
+            updatedTime: metadata.updated_time ? new Date(metadata.updated_time) : null,
             s3Key: file.Key,
-            tags: Array.isArray(frontMatter.tags) ? frontMatter.tags : [],
+            tags: [], // Joplin stores tags separately, we'll handle this later
           };
 
           await storage.createNote(noteData);
