@@ -4,6 +4,8 @@
 
 This is a full-stack web application built to manage and view Joplin notes stored in Amazon S3. The application provides a web interface to browse, search, and view markdown notes that have been exported from Joplin to an S3 bucket. It features a modern React frontend with a Node.js/Express backend, using PostgreSQL for data storage and Drizzle ORM for database operations.
 
+**Current Status**: Successfully deployed and working with real Joplin notes from S3-compatible storage (Backblaze B2). The application properly parses Joplin's native note format, filters out revisions and resources, and displays notes with correct titles and markdown rendering.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
@@ -101,4 +103,15 @@ Preferred communication style: Simple, everyday language.
 
 **UI Architecture**: Shadcn/ui provides a modern, accessible component system that's customizable and built on proven Radix UI primitives, ensuring accessibility and consistent behavior.
 
-**S3 Integration**: Direct S3 integration supports both AWS S3 and S3-compatible services, allowing the application to work with existing Joplin exports without requiring users to change their backup workflows. Custom endpoint support enables use with MinIO, DigitalOcean Spaces, and other providers.
+**S3 Integration**: Direct S3 integration supports both AWS S3 and S3-compatible services, allowing the application to work with existing Joplin exports without requiring users to change their backup workflows. Custom endpoint support enables use with MinIO, DigitalOcean Spaces, Backblaze B2, and other providers.
+
+## Recent Changes
+
+### July 24, 2025
+- **S3 Configuration**: Added prefilled test settings for Backblaze B2 integration
+- **Note Parsing**: Fixed markdown parsing errors by resolving TypeScript compatibility issues with marked library
+- **Error Handling**: Enhanced markdown parser with comprehensive error handling and logging
+- **Note Filtering**: Successfully filtering Joplin note types (type_: 1 for notes, skipping type_: 13 revisions and type_: 4 resources)
+- **Real Data Integration**: Confirmed working with authentic Joplin notes exported to S3-compatible storage
+- **Title Extraction**: Proper extraction of note titles from Joplin's native format (not YAML front matter)
+- **User Interface**: Clean display of notes with proper markdown rendering and title formatting
