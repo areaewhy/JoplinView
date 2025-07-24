@@ -11,78 +11,37 @@ marked.use(markedHighlight({
   }
 }));
 
-// Custom renderer for better styling
-const renderer = new marked.Renderer();
-
-// Custom table rendering
-renderer.table = function(header, body) {
-  return `
-    <div class="table-container">
-      <table class="min-w-full border border-border rounded-lg overflow-hidden">
-        <thead class="bg-muted">
-          ${header}
-        </thead>
-        <tbody>
-          ${body}
-        </tbody>
-      </table>
-    </div>
-  `;
-};
-
-// Custom blockquote rendering
-renderer.blockquote = function(quote) {
-  return `
-    <blockquote class="border-l-4 border-accent bg-muted/50 pl-4 py-2 my-4 italic">
-      ${quote}
-    </blockquote>
-  `;
-};
-
-// Custom code block rendering
-renderer.code = function(code, language) {
-  const lang = language || 'plaintext';
-  const highlighted = hljs.getLanguage(lang) 
-    ? hljs.highlight(code, { language: lang }).value 
-    : code;
-  
-  return `
-    <pre class="bg-slate-800 text-slate-100 p-4 rounded-lg overflow-x-auto my-4">
-      <code class="language-${lang}">${highlighted}</code>
-    </pre>
-  `;
-};
-
-// Custom inline code rendering
-renderer.codespan = function(code) {
-  return `<code class="bg-muted text-destructive px-1 py-0.5 rounded text-sm font-mono">${code}</code>`;
-};
-
-// Custom link rendering (for Joplin internal links)
-renderer.link = function(href, title, text) {
-  // Handle Joplin internal links (format: :/note-id)
-  if (href && href.startsWith(':/')) {
-    const noteId = href.substring(2);
-    return `<a href="#" data-note-id="${noteId}" class="text-primary hover:underline internal-link" title="${title || 'Internal note link'}">${text}</a>`;
-  }
-  
-  // Regular external links
-  const titleAttr = title ? ` title="${title}"` : '';
-  return `<a href="${href}"${titleAttr} class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">${text}</a>`;
-};
-
+// Simple marked configuration
 marked.setOptions({
-  renderer,
   breaks: true,
   gfm: true,
 });
 
 export function parseMarkdown(markdown: string): string {
   try {
-    return marked(markdown) as string;
+    // Handle null or undefined input
+    if (!markdown || typeof markdown !== 'string') {
+      console.error("Error parsing markdown: Invalid input", { markdown });
+      return `<p class="text-muted-foreground">No content available</p>`;
+    }
+    
+    // Parse the markdown
+    const result = marked(markdown);
+    
+    // Ensure we return a string
+    if (typeof result === 'string') {
+      return result;
+    } else if (result && typeof result.then === 'function') {
+      // Handle if marked returns a promise (shouldn't happen with current config)
+      console.error("Error parsing markdown: Unexpected promise result");
+      return `<p class="text-destructive">Error: Async parsing not supported</p>`;
+    } else {
+      console.error("Error parsing markdown: Unexpected result type", { result });
+      return `<p class="text-destructive">Error: Invalid parser result</p>`;
+    }
   } catch (error) {
     console.error("Error parsing markdown:", error);
-    return `<p class="text-destructive">Error parsing markdown content</p>`;
+    return `<p class="text-destructive">Error parsing markdown content: ${error instanceof Error ? error.message : 'Unknown error'}</p>`;
   }
 }
 
