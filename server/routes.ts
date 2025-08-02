@@ -6,10 +6,7 @@ import { z } from "zod";
 import AWS from "aws-sdk";
 import matter from "gray-matter";
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  
-
-
+export function registerRoutes(app: Express): Server {
   // Notes sync endpoint
   app.post("/api/notes/sync", async (req, res) => {
     try {
@@ -21,8 +18,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const endpoint = process.env.S3_ENDPOINT;
 
       if (!bucketName || !accessKeyId || !secretAccessKey || !region) {
-        return res.status(400).json({ 
-          message: "S3 configuration missing in environment variables. Required: S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION" 
+        return res.status(400).json({
+          message:
+            "S3 configuration missing in environment variables. Required: S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION",
         });
       }
 
@@ -32,30 +30,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         secretAccessKey,
         region,
       };
-      
+
       // Add custom endpoint if configured
       if (endpoint) {
         s3Config.endpoint = endpoint;
         s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
       }
-      
+
       const s3 = new AWS.S3(s3Config);
 
       // List all .md files in the bucket/bucket directory
-      const prefix = '';//`${bucketName}/`;
+      const prefix = ""; //`${bucketName}/`;
       const listParams = {
         Bucket: bucketName,
         Prefix: prefix,
       };
 
       const objects = await s3.listObjectsV2(listParams).promise();
-      
+
       if (!objects.Contents) {
         return res.json({ message: "No files found in bucket", notesCount: 0 });
       }
 
-      const mdFiles = objects.Contents.filter(obj => 
-        obj.Key && obj.Key.endsWith('.md')
+      const mdFiles = objects.Contents.filter(
+        (obj) => obj.Key && obj.Key.endsWith(".md"),
       );
 
       // Clear existing notes
@@ -75,92 +73,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
 
           const data = await s3.getObject(getParams).promise();
-          const content = data.Body?.toString('utf-8') || '';
-          
+          const content = data.Body?.toString("utf-8") || "";
+
           // First, quickly check if this is a revision file (starts with metadata immediately)
-          if (content.trim().startsWith('id:') && content.includes('type_:')) {
+          if (content.trim().startsWith("id:") && content.includes("type_:")) {
             console.log(`Skipping revision file: ${file.Key}`);
             continue;
           }
-          
+
           // Parse Joplin note format
-          const lines = content.split('\n');
+          const lines = content.split("\n");
           let bodyEndIndex = -1;
-          
+
           // Find where the metadata starts (look for 'id:' line)
           for (let i = 0; i < lines.length; i++) {
-            if (lines[i].trim().startsWith('id:')) {
+            if (lines[i].trim().startsWith("id:")) {
               bodyEndIndex = i - 1;
               break;
             }
           }
-          
+
           // Extract body and metadata
-          const body = bodyEndIndex > 0 ? lines.slice(0, bodyEndIndex + 1).join('\n').trim() : '';
-          const metadataLines = bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
-          
+          const body =
+            bodyEndIndex > 0
+              ? lines
+                  .slice(0, bodyEndIndex + 1)
+                  .join("\n")
+                  .trim()
+              : "";
+          const metadataLines =
+            bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
+
           // Extract GUID from filename first
-          const joplinId = file.Key.replace('.md', '');
-          
+          const joplinId = file.Key.replace(".md", "");
+
           // Extract title early for duplicate checking
           let title = joplinId;
           if (body) {
-            const firstLine = body.split('\n')[0].trim();
-            if (firstLine && !firstLine.startsWith('#')) {
+            const firstLine = body.split("\n")[0].trim();
+            if (firstLine && !firstLine.startsWith("#")) {
               title = firstLine;
-            } else if (firstLine.startsWith('#')) {
-              title = firstLine.replace(/^#+\s*/, '');
+            } else if (firstLine.startsWith("#")) {
+              title = firstLine.replace(/^#+\s*/, "");
             }
           }
-          
+
           // Check for duplicate titles before processing metadata
           const allNotes = await storage.getAllNotes();
-          const existingNoteByTitle = allNotes.find(n => n.title === title);
+          const existingNoteByTitle = allNotes.find((n) => n.title === title);
           if (existingNoteByTitle) {
             console.log(`Skipping duplicate title: ${title}`);
             continue;
           }
-          
+
           // Parse metadata into object
           const metadata: any = {};
           for (const line of metadataLines) {
             const trimmed = line.trim();
-            if (trimmed && trimmed.includes(':')) {
-              const colonIndex = trimmed.indexOf(':');
+            if (trimmed && trimmed.includes(":")) {
+              const colonIndex = trimmed.indexOf(":");
               const key = trimmed.substring(0, colonIndex).trim();
               const value = trimmed.substring(colonIndex + 1).trim();
               metadata[key] = value;
             }
           }
-          
+
           // Skip revisions and resources - only process actual notes
-          if (metadata.type_ !== '1') {
-            console.log(`Skipping file ${file.Key}: type ${metadata.type_} (not a note)`);
+          if (metadata.type_ !== "1") {
+            console.log(
+              `Skipping file ${file.Key}: type ${metadata.type_} (not a note)`,
+            );
             continue;
           }
-          
+
           // Extra check: if no body content, this might be a broken file
           if (!body || body.trim().length === 0) {
             console.log(`Skipping file ${file.Key}: no body content`);
             continue;
           }
 
-
-          
           // Create note with parsed data
           const noteData = {
             joplinId,
             title: title || joplinId,
-            body: body || '',
+            body: body || "",
             author: metadata.author || null,
             source: metadata.source || null,
             latitude: metadata.latitude || null,
             longitude: metadata.longitude || null,
             altitude: metadata.altitude || null,
-            completed: metadata.todo_completed === '1' || null,
-            due: metadata.todo_due && metadata.todo_due !== '0' ? new Date(parseInt(metadata.todo_due)) : null,
-            createdTime: metadata.created_time ? new Date(metadata.created_time) : null,
-            updatedTime: metadata.updated_time ? new Date(metadata.updated_time) : null,
+            completed: metadata.todo_completed === "1" || null,
+            due:
+              metadata.todo_due && metadata.todo_due !== "0"
+                ? new Date(parseInt(metadata.todo_due))
+                : null,
+            createdTime: metadata.created_time
+              ? new Date(metadata.created_time)
+              : null,
+            updatedTime: metadata.updated_time
+              ? new Date(metadata.updated_time)
+              : null,
             s3Key: file.Key,
             tags: [], // Joplin stores tags separately, we'll handle this later
           };
@@ -168,7 +180,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.createNote(noteData);
           processedCount++;
           storageUsed += file.Size || 0;
-
         } catch (fileError) {
           console.error(`Error processing file ${file.Key}:`, fileError);
           // Continue processing other files
@@ -183,17 +194,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isConnected: true,
       });
 
-      res.json({ 
-        message: "Sync completed successfully", 
+      res.json({
+        message: "Sync completed successfully",
         notesCount: processedCount,
-        storageUsed: `${(storageUsed / 1024 / 1024).toFixed(2)} MB`
+        storageUsed: `${(storageUsed / 1024 / 1024).toFixed(2)} MB`,
       });
-
     } catch (error) {
       console.error("Sync failed:", error);
       await storage.updateSyncStatus({ isConnected: false });
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : "Sync failed" 
+      res.status(500).json({
+        message: error instanceof Error ? error.message : "Sync failed",
       });
     }
   });
@@ -202,11 +212,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function autoSyncIfNeeded() {
     try {
       const notes = await storage.getAllNotes();
-      
+
       // If no notes exist, perform auto-sync
       if (notes.length === 0) {
         console.log("No notes found in cache, performing auto-sync...");
-        
+
         // Get S3 configuration from environment variables
         const bucketName = process.env.S3_BUCKET_NAME;
         const accessKeyId = process.env.S3_ACCESS_KEY_ID;
@@ -225,13 +235,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           secretAccessKey,
           region,
         };
-        
+
         // Add custom endpoint if configured
         if (endpoint) {
           s3Config.endpoint = endpoint;
           s3Config.s3ForcePathStyle = true;
         }
-        
+
         const s3 = new AWS.S3(s3Config);
 
         // List all .md files in the bucket (look in root directory)
@@ -241,14 +251,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
 
         const objects = await s3.listObjectsV2(listParams).promise();
-        
+
         if (!objects.Contents) {
           console.log("No files found in S3 bucket");
           return false;
         }
 
-        const mdFiles = objects.Contents.filter(obj => 
-          obj.Key && obj.Key.endsWith('.md')
+        const mdFiles = objects.Contents.filter(
+          (obj) => obj.Key && obj.Key.endsWith(".md"),
         );
 
         let processedCount = 0;
@@ -265,76 +275,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
             };
 
             const data = await s3.getObject(getParams).promise();
-            const content = data.Body?.toString('utf-8') || '';
-            
+            const content = data.Body?.toString("utf-8") || "";
+
             // First, quickly check if this is a revision file
-            if (content.trim().startsWith('id:') && content.includes('type_:')) {
+            if (
+              content.trim().startsWith("id:") &&
+              content.includes("type_:")
+            ) {
               continue;
             }
-            
+
             // Parse Joplin note format
-            const lines = content.split('\n');
+            const lines = content.split("\n");
             let bodyEndIndex = -1;
-            
+
             // Find where the metadata starts
             for (let i = 0; i < lines.length; i++) {
-              if (lines[i].trim().startsWith('id:')) {
+              if (lines[i].trim().startsWith("id:")) {
                 bodyEndIndex = i - 1;
                 break;
               }
             }
-            
+
             // Extract body and metadata
-            const body = bodyEndIndex > 0 ? lines.slice(0, bodyEndIndex + 1).join('\n').trim() : '';
-            const metadataLines = bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
-            
+            const body =
+              bodyEndIndex > 0
+                ? lines
+                    .slice(0, bodyEndIndex + 1)
+                    .join("\n")
+                    .trim()
+                : "";
+            const metadataLines =
+              bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
+
             // Parse metadata into object
             const metadata: any = {};
             for (const line of metadataLines) {
               const trimmed = line.trim();
-              if (trimmed && trimmed.includes(':')) {
-                const colonIndex = trimmed.indexOf(':');
+              if (trimmed && trimmed.includes(":")) {
+                const colonIndex = trimmed.indexOf(":");
                 const key = trimmed.substring(0, colonIndex).trim();
                 const value = trimmed.substring(colonIndex + 1).trim();
                 metadata[key] = value;
               }
             }
-            
+
             // Skip revisions and resources - only process actual notes
-            if (metadata.type_ !== '1') {
+            if (metadata.type_ !== "1") {
               continue;
             }
-            
+
             // Extra check: if no body content, skip
             if (!body || body.trim().length === 0) {
               continue;
             }
 
-
-            
             // Extract GUID from filename first
-            const joplinId = file.Key.replace('.md', '');
-            
+            const joplinId = file.Key.replace(".md", "");
+
             // Extract title from body
             let title = joplinId;
             if (body) {
-              const firstLine = body.split('\n')[0].trim();
-              if (firstLine && !firstLine.startsWith('#')) {
+              const firstLine = body.split("\n")[0].trim();
+              if (firstLine && !firstLine.startsWith("#")) {
                 title = firstLine;
-              } else if (firstLine.startsWith('#')) {
-                title = firstLine.replace(/^#+\s*/, '');
+              } else if (firstLine.startsWith("#")) {
+                title = firstLine.replace(/^#+\s*/, "");
               }
             }
-            
+
             // Check if note already exists by joplinId OR title (avoid duplicates)
             const existingNoteById = await storage.getNoteByJoplinId(joplinId);
             if (existingNoteById) {
               continue; // Skip if already exists by ID
             }
-            
+
             // Also check for duplicate titles (in case same content has different joplinIds)
             const allNotes = await storage.getAllNotes();
-            const existingNoteByTitle = allNotes.find(n => n.title === (title || joplinId));
+            const existingNoteByTitle = allNotes.find(
+              (n) => n.title === (title || joplinId),
+            );
             if (existingNoteByTitle) {
               console.log(`Skipping duplicate title: ${title || joplinId}`);
               continue; // Skip if same title already exists
@@ -344,16 +364,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const noteData = {
               joplinId,
               title: title || joplinId,
-              body: body || '',
+              body: body || "",
               author: metadata.author || null,
               source: metadata.source || null,
               latitude: metadata.latitude || null,
               longitude: metadata.longitude || null,
               altitude: metadata.altitude || null,
-              completed: metadata.todo_completed === '1' || null,
-              due: metadata.todo_due && metadata.todo_due !== '0' ? new Date(parseInt(metadata.todo_due)) : null,
-              createdTime: metadata.created_time ? new Date(metadata.created_time) : null,
-              updatedTime: metadata.updated_time ? new Date(metadata.updated_time) : null,
+              completed: metadata.todo_completed === "1" || null,
+              due:
+                metadata.todo_due && metadata.todo_due !== "0"
+                  ? new Date(parseInt(metadata.todo_due))
+                  : null,
+              createdTime: metadata.created_time
+                ? new Date(metadata.created_time)
+                : null,
+              updatedTime: metadata.updated_time
+                ? new Date(metadata.updated_time)
+                : null,
               s3Key: file.Key,
               tags: [],
             };
@@ -361,7 +388,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await storage.createNote(noteData);
             processedCount++;
             storageUsed += file.Size || 0;
-
           } catch (fileError) {
             console.error(`Error processing file ${file.Key}:`, fileError);
           }
@@ -378,7 +404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`Auto-sync completed: ${processedCount} notes loaded`);
         return true;
       }
-      
+
       return false;
     } catch (error) {
       console.error("Auto-sync failed:", error);
@@ -391,19 +417,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Try auto-sync if cache is empty
       await autoSyncIfNeeded();
-      
+
       const { search, tags } = req.query;
-      
+
       let notes;
       if (search) {
         notes = await storage.searchNotes(search as string);
       } else if (tags) {
-        const tagArray = Array.isArray(tags) ? tags as string[] : [tags as string];
+        const tagArray = Array.isArray(tags)
+          ? (tags as string[])
+          : [tags as string];
         notes = await storage.getNotesByTags(tagArray);
       } else {
         notes = await storage.getAllNotes();
       }
-      
+
       res.json(notes);
     } catch (error) {
       res.status(500).json({ message: "Failed to get notes" });
@@ -414,11 +442,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const note = await storage.getNoteById(id);
-      
+
       if (!note) {
         return res.status(404).json({ message: "Note not found" });
       }
-      
+
       res.json(note);
     } catch (error) {
       res.status(500).json({ message: "Failed to get note" });
@@ -429,27 +457,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/sync-status", async (req, res) => {
     try {
       const status = await storage.getSyncStatus();
-      
+
       // Check if S3 environment variables are configured
       const isS3Configured = !!(
-        process.env.S3_BUCKET_NAME && 
-        process.env.S3_ACCESS_KEY_ID && 
-        process.env.S3_SECRET_ACCESS_KEY && 
+        process.env.S3_BUCKET_NAME &&
+        process.env.S3_ACCESS_KEY_ID &&
+        process.env.S3_SECRET_ACCESS_KEY &&
         process.env.S3_REGION
       );
-      
-      res.json(status || {
-        lastSyncTime: null,
-        totalNotes: 0,
-        storageUsed: "0 MB",
-        isConnected: isS3Configured,
-      });
+
+      res.json(
+        status || {
+          lastSyncTime: null,
+          totalNotes: 0,
+          storageUsed: "0 MB",
+          isConnected: isS3Configured,
+        },
+      );
     } catch (error) {
       res.status(500).json({ message: "Failed to get sync status" });
     }
   });
-
-
 
   const httpServer = createServer(app);
   return httpServer;

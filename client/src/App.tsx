@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Route, Switch, useLocation } from "wouter";
@@ -14,7 +13,6 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Note, SyncStatus } from "@shared/schema";
 
 function App() {
-
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -22,12 +20,12 @@ function App() {
 
   const { data: syncStatus } = useQuery<SyncStatus>({
     queryKey: ["/api/sync-status"],
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 60000 * 15, // Refresh every 15 minutes
   });
 
   const { data: notes = [], isLoading } = useQuery<Note[]>({
     queryKey: ["/api/notes"],
-    refetchInterval: 60000, // Refresh every minute
+    refetchInterval: 60000 * 30, // Refresh every 30 minutes
   });
 
   const syncNotesMutation = useMutation({
@@ -42,7 +40,6 @@ function App() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sync-status"] });
-
     },
     onError: (error: any) => {
       toast({
@@ -73,10 +70,12 @@ function App() {
           <div className="ml-auto flex items-center space-x-4">
             {syncStatus && (
               <div className="text-sm text-muted-foreground">
-                {syncStatus.totalNotes || 0} notes • {syncStatus.storageUsed || '0 KB'}
+                {syncStatus.totalNotes || 0} notes •{" "}
+                {syncStatus.storageUsed || "0 KB"}
                 {syncStatus.lastSyncTime && (
                   <span className="ml-2">
-                    Last sync: {new Date(syncStatus.lastSyncTime).toLocaleString()}
+                    Last sync:{" "}
+                    {new Date(syncStatus.lastSyncTime).toLocaleString()}
                   </span>
                 )}
               </div>
@@ -85,16 +84,20 @@ function App() {
               <span className="hidden sm:inline">
                 {syncStatus?.isConnected ? "S3 Connected" : "S3 Not Configured"}
               </span>
-              <div className={`w-2 h-2 rounded-full ${
-                syncStatus?.isConnected ? "bg-green-500" : "bg-red-500"
-              }`} />
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  syncStatus?.isConnected ? "bg-green-500" : "bg-red-500"
+                }`}
+              />
             </div>
             <Button
               onClick={handleSyncNotes}
               disabled={syncNotesMutation.isPending || !syncStatus?.isConnected}
               size="sm"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncNotesMutation.isPending ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${syncNotesMutation.isPending ? "animate-spin" : ""}`}
+              />
               Sync Notes
             </Button>
           </div>
@@ -106,12 +109,12 @@ function App() {
           <Route path="/note/:id">
             {(params) => {
               const noteId = parseInt(params.id);
-              const note = notes.find(n => n.id === noteId) || null;
+              const note = notes.find((n) => n.id === noteId) || null;
               return <NoteViewer note={note} />;
             }}
           </Route>
           <Route>
-            <NotesList 
+            <NotesList
               notes={notes}
               selectedNote={selectedNote}
               onSelectNote={handleSelectNote}
