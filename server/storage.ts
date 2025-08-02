@@ -42,10 +42,10 @@ export class MemStorage implements IStorage {
   private initializeS3Config() {
     const defaultConfig: S3Config = {
       id: 1,
-      bucketName: "temporal-joplin",
-      region: "us-east-005",
-      endpoint: "https://s3.us-east-005.backblazeb2.com",
-      accessKeyId: "005480f0c61fcfd0000000003",
+      bucketName: process.env.S3_BUCKET_NAME || "",
+      region: process.env.S3_REGION || "",
+      endpoint: process.env.S3_ENDPOINT || null,
+      accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
       isActive: true,
     };
