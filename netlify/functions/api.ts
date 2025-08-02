@@ -1,3 +1,4 @@
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "../../server/routes.js";
 import serverless from "serverless-http";
@@ -13,7 +14,19 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   res.status(status).json({ message });
 });
 
-// Register all the API routes
-await registerRoutes(app);
+let isInitialized = false;
 
-export const handler = serverless(app);
+// Create a wrapper that initializes routes on first request
+const initializeApp = async () => {
+  if (!isInitialized) {
+    await registerRoutes(app);
+    isInitialized = true;
+  }
+  return app;
+};
+
+export const handler = async (event: any, context: any) => {
+  const initializedApp = await initializeApp();
+  const serverlessHandler = serverless(initializedApp);
+  return serverlessHandler(event, context);
+};
