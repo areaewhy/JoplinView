@@ -14,14 +14,21 @@ interface NotesListProps {
   isLoading: boolean;
 }
 
-export default function NotesList({ notes, selectedNote, onSelectNote, isLoading }: NotesListProps) {
+export default function NotesList({
+  notes,
+  selectedNote,
+  onSelectNote,
+  isLoading,
+}: NotesListProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Filter notes based on search query only
   const filteredNotes = (notes || []).filter((note) => {
-    return searchQuery === "" || 
+    return (
+      searchQuery === "" ||
       note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      note.body.toLowerCase().includes(searchQuery.toLowerCase());
+      note.body.toLowerCase().includes(searchQuery.toLowerCase())
+    );
   });
 
   if (isLoading) {
@@ -76,31 +83,11 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-foreground flex items-center">
               <FileText className="h-5 w-5 mr-2" />
-              Notes
+              Work Notes
             </h2>
-            <div className="flex space-x-2">
-              <button className="p-2 text-muted-foreground hover:text-primary transition-colors" title="Grid View">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <rect x="3" y="3" width="7" height="7" />
-                  <rect x="14" y="3" width="7" height="7" />
-                  <rect x="14" y="14" width="7" height="7" />
-                  <rect x="3" y="14" width="7" height="7" />
-                </svg>
-              </button>
-              <button className="p-2 text-primary transition-colors" title="List View">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <line x1="8" y1="6" x2="21" y2="6" />
-                  <line x1="8" y1="12" x2="21" y2="12" />
-                  <line x1="8" y1="18" x2="21" y2="18" />
-                  <line x1="3" y1="6" x2="3.01" y2="6" />
-                  <line x1="3" y1="12" x2="3.01" y2="12" />
-                  <line x1="3" y1="18" x2="3.01" y2="18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            {filteredNotes.length} notes
+            <span className="text-sm text-muted-foreground">
+              {filteredNotes.length} notes
+            </span>
           </div>
         </div>
 
@@ -110,7 +97,9 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No notes found.</p>
               {notes.length === 0 ? (
-                <p className="text-sm mt-1">Your notes will appear here after sync completes.</p>
+                <p className="text-sm mt-1">
+                  Your notes will appear here after sync completes.
+                </p>
               ) : (
                 <p className="text-sm mt-1">Try adjusting your search query.</p>
               )}
@@ -137,14 +126,19 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>
                       {note.updatedTime
-                        ? formatDistanceToNow(new Date(note.updatedTime), { addSuffix: true })
-                        : "No date"
-                      }
+                        ? formatDistanceToNow(new Date(note.updatedTime), {
+                            addSuffix: true,
+                          })
+                        : "No date"}
                     </span>
                     {note.tags && note.tags.length > 0 && (
                       <div className="flex items-center space-x-1">
                         {note.tags.slice(0, 2).map((tag) => (
-                          <Badge key={tag} variant="secondary" className="text-xs">
+                          <Badge
+                            key={tag}
+                            variant="secondary"
+                            className="text-xs"
+                          >
                             {tag}
                           </Badge>
                         ))}
