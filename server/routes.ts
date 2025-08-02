@@ -157,9 +157,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // Extract body (content before metadata) and metadata
+          // Extract body and metadata
           const body = bodyEndIndex > 0 ? lines.slice(0, bodyEndIndex + 1).join('\n').trim() : '';
           const metadataLines = bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
+          
+          // Extract title early for duplicate checking
+          let title = joplinId;
+          if (body) {
+            const firstLine = body.split('\n')[0].trim();
+            if (firstLine && !firstLine.startsWith('#')) {
+              title = firstLine;
+            } else if (firstLine.startsWith('#')) {
+              title = firstLine.replace(/^#+\s*/, '');
+            }
+          }
+          
+          // Check for duplicate titles before processing metadata
+          const allNotes = await storage.getAllNotes();
+          const existingNoteByTitle = allNotes.find(n => n.title === title);
+          if (existingNoteByTitle) {
+            console.log(`Skipping duplicate title: ${title}`);
+            continue;
+          }
           
           // Parse metadata into object
           const metadata: any = {};
@@ -186,18 +205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Extract GUID from filename (remove directory path and .md extension)
-          const joplinId = file.Key.replace(prefix, '').replace('.md', '');
-          
-          // Extract title from body (first line) or use joplinId as fallback
-          let title = joplinId;
-          if (body) {
-            const firstLine = body.split('\n')[0].trim();
-            if (firstLine && !firstLine.startsWith('#')) {
-              title = firstLine;
-            } else if (firstLine.startsWith('#')) {
-              title = firstLine.replace(/^#+\s*/, '');
-            }
-          }
+          const joplinId = file.Key.replace('.md', '');
           
           // Create note with parsed data
           const noteData = {
@@ -376,10 +384,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
             
-            // Check if note already exists (avoid duplicates in auto-sync)
-            const existingNote = await storage.getNoteByJoplinId(joplinId);
-            if (existingNote) {
-              continue; // Skip if already exists
+            // Check if note already exists by joplinId OR title (avoid duplicates)
+            const existingNoteById = await storage.getNoteByJoplinId(joplinId);
+            if (existingNoteById) {
+              continue; // Skip if already exists by ID
+            }
+            
+            // Also check for duplicate titles (in case same content has different joplinIds)
+            const allNotes = await storage.getAllNotes();
+            const existingNoteByTitle = allNotes.find(n => n.title === (title || joplinId));
+            if (existingNoteByTitle) {
+              console.log(`Skipping duplicate title: ${title || joplinId}`);
+              continue; // Skip if same title already exists
             }
 
             // Create note with parsed data
