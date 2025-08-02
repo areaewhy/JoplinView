@@ -1,76 +1,14 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertS3ConfigSchema, insertNoteSchema } from "@shared/schema";
+import { insertNoteSchema } from "@shared/schema";
 import { z } from "zod";
 import AWS from "aws-sdk";
 import matter from "gray-matter";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  // S3 Configuration endpoints
-  app.get("/api/s3-config", async (req, res) => {
-    try {
-      const config = await storage.getS3Config();
-      if (!config) {
-        return res.status(404).json({ message: "No S3 configuration found" });
-      }
-      
-      // Don't send secret key in response
-      const { secretAccessKey, ...safeConfig } = config;
-      res.json(safeConfig);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get S3 configuration" });
-    }
-  });
 
-  app.post("/api/s3-config", async (req, res) => {
-    try {
-      const validatedData = insertS3ConfigSchema.parse(req.body);
-      const config = await storage.createS3Config(validatedData);
-      
-      // Don't send secret key in response
-      const { secretAccessKey, ...safeConfig } = config;
-      res.json(safeConfig);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to save S3 configuration" });
-    }
-  });
-
-  app.post("/api/s3-config/test", async (req, res) => {
-    try {
-      const { bucketName, region, accessKeyId, secretAccessKey } = req.body;
-      
-      // Configure AWS SDK
-      const s3Config: any = {
-        accessKeyId,
-        secretAccessKey,
-        region,
-      };
-      
-      // Add custom endpoint if provided
-      if (req.body.endpoint) {
-        s3Config.endpoint = req.body.endpoint;
-        s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
-      }
-      
-      const s3 = new AWS.S3(s3Config);
-
-      // Test connection by listing bucket contents
-      await s3.headBucket({ Bucket: bucketName }).promise();
-      
-      res.json({ success: true, message: "S3 connection successful" });
-    } catch (error) {
-      console.error("S3 connection test failed:", error);
-      res.status(400).json({ 
-        success: false, 
-        message: error instanceof Error ? error.message : "S3 connection failed" 
-      });
-    }
-  });
 
   // Notes sync endpoint
   app.post("/api/notes/sync", async (req, res) => {
@@ -161,6 +99,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const body = bodyEndIndex > 0 ? lines.slice(0, bodyEndIndex + 1).join('\n').trim() : '';
           const metadataLines = bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
           
+          // Extract GUID from filename first
+          const joplinId = file.Key.replace('.md', '');
+          
           // Extract title early for duplicate checking
           let title = joplinId;
           if (body) {
@@ -204,8 +145,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Extract GUID from filename (remove directory path and .md extension)
-          const joplinId = file.Key.replace('.md', '');
+
           
           // Create note with parsed data
           const noteData = {
@@ -370,7 +310,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               continue;
             }
 
-            // Extract GUID from filename (remove .md extension)
+
+            
+            // Extract GUID from filename first
             const joplinId = file.Key.replace('.md', '');
             
             // Extract title from body
@@ -507,28 +449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all unique tags
-  app.get("/api/tags", async (req, res) => {
-    try {
-      const notes = await storage.getAllNotes();
-      const tagCounts: Record<string, number> = {};
-      
-      notes.forEach(note => {
-        note.tags.forEach(tag => {
-          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-        });
-      });
-      
-      const tags = Object.entries(tagCounts).map(([name, count]) => ({
-        name,
-        count,
-      }));
-      
-      res.json(tags);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get tags" });
-    }
-  });
+
 
   const httpServer = createServer(app);
   return httpServer;

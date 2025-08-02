@@ -42,7 +42,7 @@ function App() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/notes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sync-status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tags"] });
+
     },
     onError: (error: any) => {
       toast({

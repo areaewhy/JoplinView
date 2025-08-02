@@ -1,11 +1,6 @@
-import { s3Configs, notes, syncStatus, type S3Config, type InsertS3Config, type Note, type InsertNote, type SyncStatus } from "@shared/schema";
+import { notes, syncStatus, type Note, type InsertNote, type SyncStatus } from "@shared/schema";
 
 export interface IStorage {
-  // S3 Configuration
-  getS3Config(): Promise<S3Config | undefined>;
-  createS3Config(config: InsertS3Config): Promise<S3Config>;
-  updateS3Config(id: number, config: Partial<InsertS3Config>): Promise<S3Config>;
-  
   // Notes
   getAllNotes(): Promise<Note[]>;
   getNoteById(id: number): Promise<Note | undefined>;
@@ -15,7 +10,6 @@ export interface IStorage {
   deleteNote(id: number): Promise<void>;
   deleteAllNotes(): Promise<void>;
   searchNotes(query: string): Promise<Note[]>;
-  getNotesByTags(tags: string[]): Promise<Note[]>;
   
   // Sync Status
   getSyncStatus(): Promise<SyncStatus | undefined>;
@@ -23,66 +17,16 @@ export interface IStorage {
 }
 
 export class MemStorage implements IStorage {
-  private s3Configs: Map<number, S3Config>;
   private notes: Map<number, Note>;
   private syncStatus: SyncStatus | undefined;
-  private currentS3Id: number;
   private currentNoteId: number;
 
   constructor() {
-    this.s3Configs = new Map();
     this.notes = new Map();
-    this.currentS3Id = 1;
     this.currentNoteId = 1;
-
-    // Initialize with hardcoded S3 configuration
-    this.initializeS3Config();
   }
 
-  private initializeS3Config() {
-    const defaultConfig: S3Config = {
-      id: 1,
-      bucketName: process.env.S3_BUCKET_NAME || "",
-      region: process.env.S3_REGION || "",
-      endpoint: process.env.S3_ENDPOINT || null,
-      accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
-      isActive: true,
-    };
-    this.s3Configs.set(1, defaultConfig);
-    this.currentS3Id = 2;
-  }
 
-  // S3 Configuration
-  async getS3Config(): Promise<S3Config | undefined> {
-    return Array.from(this.s3Configs.values()).find(config => config.isActive);
-  }
-
-  async createS3Config(insertConfig: InsertS3Config): Promise<S3Config> {
-    // Deactivate existing configs
-    this.s3Configs.forEach(config => config.isActive = false);
-    
-    const id = this.currentS3Id++;
-    const config: S3Config = { 
-      ...insertConfig, 
-      id, 
-      isActive: true,
-      endpoint: insertConfig.endpoint || null 
-    };
-    this.s3Configs.set(id, config);
-    return config;
-  }
-
-  async updateS3Config(id: number, updates: Partial<InsertS3Config>): Promise<S3Config> {
-    const config = this.s3Configs.get(id);
-    if (!config) {
-      throw new Error("S3 config not found");
-    }
-    
-    const updatedConfig = { ...config, ...updates };
-    this.s3Configs.set(id, updatedConfig);
-    return updatedConfig;
-  }
 
   // Notes
   async getAllNotes(): Promise<Note[]> {
@@ -111,6 +55,7 @@ export class MemStorage implements IStorage {
       longitude: insertNote.longitude || null,
       altitude: insertNote.altitude || null,
       completed: insertNote.completed || null,
+      due: insertNote.due || null,
       tags: insertNote.tags || []
     };
     this.notes.set(id, note);
@@ -141,15 +86,11 @@ export class MemStorage implements IStorage {
     return Array.from(this.notes.values()).filter(note =>
       note.title.toLowerCase().includes(lowercaseQuery) ||
       note.body.toLowerCase().includes(lowercaseQuery) ||
-      (note.tags && note.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery)))
+      (note.tags?.some(tag => tag.toLowerCase().includes(lowercaseQuery)))
     );
   }
 
-  async getNotesByTags(tags: string[]): Promise<Note[]> {
-    return Array.from(this.notes.values()).filter(note =>
-      note.tags && tags.some(tag => note.tags.includes(tag))
-    );
-  }
+
 
   // Sync Status
   async getSyncStatus(): Promise<SyncStatus | undefined> {
