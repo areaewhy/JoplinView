@@ -25,13 +25,15 @@ export default function Home() {
   });
 
   const filteredNotes = notes.filter((note: Note) => {
-    const matchesSearch = !searchQuery || 
+    const matchesSearch =
+      !searchQuery ||
       note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       note.body.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesTags = selectedTags.length === 0 || 
-      selectedTags.some(tag => note.tags.includes(tag));
-    
+
+    const matchesTags =
+      selectedTags.length === 0 ||
+      selectedTags.some((tag) => note.tags.includes(tag));
+
     return matchesSearch && matchesTags;
   });
 
@@ -43,25 +45,21 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-sm">J</span>
+                <span className="text-primary-foreground font-bold text-sm">
+                  J
+                </span>
               </div>
-              <h1 className="text-xl font-semibold text-foreground">Joplin S3 Notes Manager</h1>
+              <h1 className="text-xl font-semibold text-foreground">
+                Joplin S3 Notes Manager
+              </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <button 
+              <button
                 onClick={() => setIsSettingsPanelOpen(!isSettingsPanelOpen)}
                 className="lg:hidden p-2 text-muted-foreground hover:text-primary transition-colors"
               >
                 <Search className="h-5 w-5" />
               </button>
-              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                <span className="hidden sm:inline">
-                  {syncStatus?.isConnected ? "Connected to S3" : "Not connected"}
-                </span>
-                <div className={`w-2 h-2 rounded-full ${
-                  syncStatus?.isConnected ? "bg-green-500" : "bg-red-500"
-                }`} />
-              </div>
             </div>
           </div>
         </div>
@@ -69,13 +67,15 @@ export default function Home() {
 
       <div className="flex h-[calc(100vh-73px)]">
         {/* Settings Panel */}
-        <div className={`
+        <div
+          className={`
           w-80 bg-card shadow-lg border-r border-border flex-shrink-0 
           transform lg:translate-x-0 transition-transform duration-300 ease-in-out 
           fixed lg:relative z-40 h-full
           ${isSettingsPanelOpen ? "translate-x-0" : "-translate-x-full"}
-        `}>
-          <SettingsPanel 
+        `}
+        >
+          <SettingsPanel
             syncStatus={syncStatus}
             selectedTags={selectedTags}
             onTagsChange={setSelectedTags}
@@ -84,7 +84,7 @@ export default function Home() {
 
         {/* Overlay for mobile */}
         {isSettingsPanelOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
             onClick={() => setIsSettingsPanelOpen(false)}
           />

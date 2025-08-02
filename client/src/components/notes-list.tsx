@@ -79,17 +79,6 @@ export default function NotesList({
 
       {/* Notes list */}
       <div className="flex flex-col h-full">
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-foreground flex items-center">
-              <FileText className="h-5 w-5 mr-2" />
-              Work Notes
-            </h2>
-            <span className="text-sm text-muted-foreground">
-              {filteredNotes.length} notes
-            </span>
-          </div>
-        </div>
 
         <div className="flex-1 overflow-y-auto">
           {filteredNotes.length === 0 ? (

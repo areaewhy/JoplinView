@@ -65,13 +65,12 @@ function App() {
         <div className="flex h-16 items-center px-4">
           <div className="flex items-center space-x-2">
             <Book className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-semibold">Joplin Notes</h1>
+            <h1 className="text-xl font-semibold">Work Notes</h1>
           </div>
           <div className="ml-auto flex items-center space-x-4">
             {syncStatus && (
               <div className="text-sm text-muted-foreground">
                 {syncStatus.totalNotes || 0} notes •{" "}
-                {syncStatus.storageUsed || "0 KB"}
                 {syncStatus.lastSyncTime && (
                   <span className="ml-2">
                     Last sync:{" "}
@@ -80,16 +79,7 @@ function App() {
                 )}
               </div>
             )}
-            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <span className="hidden sm:inline">
-                {syncStatus?.isConnected ? "S3 Connected" : "S3 Not Configured"}
-              </span>
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  syncStatus?.isConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-              />
-            </div>
+
             <Button
               onClick={handleSyncNotes}
               disabled={syncNotesMutation.isPending || !syncStatus?.isConnected}
