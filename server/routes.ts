@@ -104,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const s3 = new AWS.S3(s3Config);
 
       // List all .md files in the bucket/bucket directory
-      const prefix = `${bucketName}/`;
+      const prefix = '';//`${bucketName}/`;
       const listParams = {
         Bucket: bucketName,
         Prefix: prefix,
@@ -286,11 +286,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const s3 = new AWS.S3(s3Config);
 
-        // List all .md files in the bucket
-        const prefix = `${bucketName}/`;
+        // List all .md files in the bucket (look in root directory)
         const listParams = {
           Bucket: bucketName,
-          Prefix: prefix,
+          Prefix: "", // Empty prefix to search from root
         };
 
         const objects = await s3.listObjectsV2(listParams).promise();
@@ -363,8 +362,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               continue;
             }
 
-            // Extract GUID from filename
-            const joplinId = file.Key.replace(prefix, '').replace('.md', '');
+            // Extract GUID from filename (remove .md extension)
+            const joplinId = file.Key.replace('.md', '');
             
             // Extract title from body
             let title = joplinId;
