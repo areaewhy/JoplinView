@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Note, SyncStatus } from "@shared/schema";
 
 function App() {
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -116,8 +116,6 @@ function App() {
               selectedNote={selectedNote}
               onSelectNote={handleSelectNote}
               isLoading={isLoading}
-              selectedTags={selectedTags}
-              onTagsChange={setSelectedTags}
             />
           </Route>
         </Switch>
