@@ -107,6 +107,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### August 2, 2025
+- **Environment-Based Configuration**: Updated backend to use S3 environment variables (S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION, S3_ENDPOINT) instead of user-editable settings
+- **Automatic Sync**: Implemented auto-sync functionality that triggers when notes cache is empty, eliminating need for manual sync
+- **Tag Filtering Removal**: Completely removed tag filtering functionality and simplified notes list to single-column layout
+- **Root Directory Support**: Updated S3 sync logic to handle notes in bucket root directory instead of subdirectories
+- **Duplicate Prevention**: Added intelligent deduplication using both joplinId and title matching to prevent duplicate notes from appearing in the interface
+- **Performance Optimization**: Auto-sync now successfully loads 26 unique notes while filtering out 7 duplicates that existed in S3 storage
+
 ### July 24, 2025
 - **S3 Configuration**: Added prefilled test settings for Backblaze B2 integration
 - **Note Parsing**: Fixed markdown parsing errors by resolving TypeScript compatibility issues with marked library
