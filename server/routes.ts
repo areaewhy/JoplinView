@@ -250,9 +250,185 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Function to perform auto-sync if needed
+  async function autoSyncIfNeeded() {
+    try {
+      const notes = await storage.getAllNotes();
+      
+      // If no notes exist, perform auto-sync
+      if (notes.length === 0) {
+        console.log("No notes found in cache, performing auto-sync...");
+        
+        // Get S3 configuration from environment variables
+        const bucketName = process.env.S3_BUCKET_NAME;
+        const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+        const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+        const region = process.env.S3_REGION;
+        const endpoint = process.env.S3_ENDPOINT;
+
+        if (!bucketName || !accessKeyId || !secretAccessKey || !region) {
+          console.log("S3 configuration missing, skipping auto-sync");
+          return false;
+        }
+
+        // Configure AWS SDK
+        const s3Config: any = {
+          accessKeyId,
+          secretAccessKey,
+          region,
+        };
+        
+        // Add custom endpoint if configured
+        if (endpoint) {
+          s3Config.endpoint = endpoint;
+          s3Config.s3ForcePathStyle = true;
+        }
+        
+        const s3 = new AWS.S3(s3Config);
+
+        // List all .md files in the bucket
+        const prefix = `${bucketName}/`;
+        const listParams = {
+          Bucket: bucketName,
+          Prefix: prefix,
+        };
+
+        const objects = await s3.listObjectsV2(listParams).promise();
+        
+        if (!objects.Contents) {
+          console.log("No files found in S3 bucket");
+          return false;
+        }
+
+        const mdFiles = objects.Contents.filter(obj => 
+          obj.Key && obj.Key.endsWith('.md')
+        );
+
+        let processedCount = 0;
+        let storageUsed = 0;
+
+        // Process each markdown file
+        for (const file of mdFiles) {
+          if (!file.Key) continue;
+
+          try {
+            const getParams = {
+              Bucket: bucketName,
+              Key: file.Key,
+            };
+
+            const data = await s3.getObject(getParams).promise();
+            const content = data.Body?.toString('utf-8') || '';
+            
+            // First, quickly check if this is a revision file
+            if (content.trim().startsWith('id:') && content.includes('type_:')) {
+              continue;
+            }
+            
+            // Parse Joplin note format
+            const lines = content.split('\n');
+            let bodyEndIndex = -1;
+            
+            // Find where the metadata starts
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].trim().startsWith('id:')) {
+                bodyEndIndex = i - 1;
+                break;
+              }
+            }
+            
+            // Extract body and metadata
+            const body = bodyEndIndex > 0 ? lines.slice(0, bodyEndIndex + 1).join('\n').trim() : '';
+            const metadataLines = bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
+            
+            // Parse metadata into object
+            const metadata: any = {};
+            for (const line of metadataLines) {
+              const trimmed = line.trim();
+              if (trimmed && trimmed.includes(':')) {
+                const colonIndex = trimmed.indexOf(':');
+                const key = trimmed.substring(0, colonIndex).trim();
+                const value = trimmed.substring(colonIndex + 1).trim();
+                metadata[key] = value;
+              }
+            }
+            
+            // Skip revisions and resources - only process actual notes
+            if (metadata.type_ !== '1') {
+              continue;
+            }
+            
+            // Extra check: if no body content, skip
+            if (!body || body.trim().length === 0) {
+              continue;
+            }
+
+            // Extract GUID from filename
+            const joplinId = file.Key.replace(prefix, '').replace('.md', '');
+            
+            // Extract title from body
+            let title = joplinId;
+            if (body) {
+              const firstLine = body.split('\n')[0].trim();
+              if (firstLine && !firstLine.startsWith('#')) {
+                title = firstLine;
+              } else if (firstLine.startsWith('#')) {
+                title = firstLine.replace(/^#+\s*/, '');
+              }
+            }
+            
+            // Create note with parsed data
+            const noteData = {
+              joplinId,
+              title: title || joplinId,
+              body: body || '',
+              author: metadata.author || null,
+              source: metadata.source || null,
+              latitude: metadata.latitude || null,
+              longitude: metadata.longitude || null,
+              altitude: metadata.altitude || null,
+              completed: metadata.todo_completed === '1' || null,
+              due: metadata.todo_due && metadata.todo_due !== '0' ? new Date(parseInt(metadata.todo_due)) : null,
+              createdTime: metadata.created_time ? new Date(metadata.created_time) : null,
+              updatedTime: metadata.updated_time ? new Date(metadata.updated_time) : null,
+              s3Key: file.Key,
+              tags: [],
+            };
+
+            await storage.createNote(noteData);
+            processedCount++;
+            storageUsed += file.Size || 0;
+
+          } catch (fileError) {
+            console.error(`Error processing file ${file.Key}:`, fileError);
+          }
+        }
+
+        // Update sync status
+        await storage.updateSyncStatus({
+          lastSyncTime: new Date(),
+          totalNotes: processedCount,
+          storageUsed: `${(storageUsed / 1024 / 1024).toFixed(2)} MB`,
+          isConnected: true,
+        });
+
+        console.log(`Auto-sync completed: ${processedCount} notes loaded`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error("Auto-sync failed:", error);
+      return false;
+    }
+  }
+
   // Notes endpoints
   app.get("/api/notes", async (req, res) => {
     try {
+      // Try auto-sync if cache is empty
+      await autoSyncIfNeeded();
+      
       const { search, tags } = req.query;
       
       let notes;
