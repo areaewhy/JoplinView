@@ -75,30 +75,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Notes sync endpoint
   app.post("/api/notes/sync", async (req, res) => {
     try {
-      const config = await storage.getS3Config();
-      if (!config) {
-        return res.status(400).json({ message: "No S3 configuration found" });
+      // Get S3 configuration from environment variables
+      const bucketName = process.env.S3_BUCKET_NAME;
+      const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+      const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+      const region = process.env.S3_REGION;
+      const endpoint = process.env.S3_ENDPOINT;
+
+      if (!bucketName || !accessKeyId || !secretAccessKey || !region) {
+        return res.status(400).json({ 
+          message: "S3 configuration missing in environment variables. Required: S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION" 
+        });
       }
 
       // Configure AWS SDK
       const s3Config: any = {
-        accessKeyId: config.accessKeyId,
-        secretAccessKey: config.secretAccessKey,
-        region: config.region,
+        accessKeyId,
+        secretAccessKey,
+        region,
       };
       
       // Add custom endpoint if configured
-      if (config.endpoint) {
-        s3Config.endpoint = config.endpoint;
+      if (endpoint) {
+        s3Config.endpoint = endpoint;
         s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
       }
       
       const s3 = new AWS.S3(s3Config);
 
       // List all .md files in the bucket/bucket directory
-      const prefix = `${config.bucketName}/`;
+      const prefix = `${bucketName}/`;
       const listParams = {
-        Bucket: config.bucketName,
+        Bucket: bucketName,
         Prefix: prefix,
       };
 
@@ -124,7 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         try {
           const getParams = {
-            Bucket: config.bucketName,
+            Bucket: bucketName,
             Key: file.Key,
           };
 
@@ -282,11 +290,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/sync-status", async (req, res) => {
     try {
       const status = await storage.getSyncStatus();
+      
+      // Check if S3 environment variables are configured
+      const isS3Configured = !!(
+        process.env.S3_BUCKET_NAME && 
+        process.env.S3_ACCESS_KEY_ID && 
+        process.env.S3_SECRET_ACCESS_KEY && 
+        process.env.S3_REGION
+      );
+      
       res.json(status || {
         lastSyncTime: null,
         totalNotes: 0,
         storageUsed: "0 MB",
-        isConnected: false,
+        isConnected: isS3Configured,
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to get sync status" });
