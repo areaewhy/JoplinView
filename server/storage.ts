@@ -34,6 +34,23 @@ export class MemStorage implements IStorage {
     this.notes = new Map();
     this.currentS3Id = 1;
     this.currentNoteId = 1;
+
+    // Initialize with hardcoded S3 configuration
+    this.initializeS3Config();
+  }
+
+  private initializeS3Config() {
+    const defaultConfig: S3Config = {
+      id: 1,
+      bucketName: "temporal-joplin",
+      region: "us-east-005",
+      endpoint: "https://s3.us-east-005.backblazeb2.com",
+      accessKeyId: "005480f0c61fcfd0000000003",
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+      isActive: true,
+    };
+    this.s3Configs.set(1, defaultConfig);
+    this.currentS3Id = 2;
   }
 
   // S3 Configuration
