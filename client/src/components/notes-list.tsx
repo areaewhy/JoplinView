@@ -2,7 +2,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Paperclip, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Note } from "@shared/schema";
+import type { Note } from "@shared/schema";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Note } from "@shared/schema";
 
 interface NotesListProps {
   notes: Note[];
@@ -32,8 +31,20 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
       onTagsChange(selectedTags.filter(tag => tag !== tagName));
     }
   };
+
+  // Filter notes based on search query and selected tags
+  const filteredNotes = (notes || []).filter((note) => {
+    const matchesSearch = searchQuery === "" || 
+      note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      note.body.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesTags = selectedTags.length === 0 || 
+      selectedTags.every(tag => note.tags?.includes(tag));
+    
+    return matchesSearch && matchesTags;
+  });
   const tags = notes.reduce((acc: { name: string; count: number }[], note) => {
-    note.tags.forEach((tag) => {
+    note.tags?.forEach((tag) => {
       const existingTag = acc.find((t) => t.name === tag);
       if (existingTag) {
         existingTag.count += 1;
@@ -150,18 +161,18 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
             </div>
           </div>
           <div className="text-sm text-muted-foreground">
-            {notes.length} notes
+            {filteredNotes.length} notes
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {notes.length === 0 ? (
+          {filteredNotes.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <p>No notes found.</p>
               <p className="text-sm mt-1">Configure S3 and sync to see your notes.</p>
             </div>
           ) : (
-            notes.map((note) => (
+            filteredNotes.map((note) => (
               <div
                 key={note.id}
                 onClick={() => onSelectNote(note)}
@@ -193,12 +204,12 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
                     }
                   </span>
                   <div className="flex items-center space-x-1">
-                    {note.tags.slice(0, 2).map((tag) => (
+                    {note.tags?.slice(0, 2).map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-xs">
                         {tag}
                       </Badge>
                     ))}
-                    {note.tags.length > 2 && (
+                    {note.tags && note.tags.length > 2 && (
                       <Badge variant="secondary" className="text-xs">
                         +{note.tags.length - 2}
                       </Badge>
@@ -210,8 +221,6 @@ export default function NotesList({ notes, selectedNote, onSelectNote, isLoading
           )}
         </div>
       </div>
-</div>
-      )}
       </div>
     </div>
   );
