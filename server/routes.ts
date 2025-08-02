@@ -6,6 +6,8 @@ import { z } from "zod";
 import AWS from "aws-sdk";
 import matter from "gray-matter";
 
+const parentId_filter = "ce3835780b164c92b8fa16a4edee5952";
+
 export function registerRoutes(app: Express): Server {
   // Notes sync endpoint
   app.post("/api/notes/sync", async (req, res) => {
@@ -143,6 +145,11 @@ export function registerRoutes(app: Express): Server {
             console.log(
               `Skipping file ${file.Key}: type ${metadata.type_} (not a note)`,
             );
+            continue;
+          }
+
+          // only allow notes in the "Work" folder (parent_id: ce3835780b164c92b8fa16a4edee5952)
+          if (metadata.parent_id !== parentId_filter) {
             continue;
           }
 
@@ -342,6 +349,11 @@ export function registerRoutes(app: Express): Server {
               } else if (firstLine.startsWith("#")) {
                 title = firstLine.replace(/^#+\s*/, "");
               }
+            }
+
+            // only allow notes in the "Work" folder (parent_id: ce3835780b164c92b8fa16a4edee5952)
+            if (metadata.parent_id !== parentId_filter) {
+              continue;
             }
 
             // Check if note already exists by joplinId OR title (avoid duplicates)
