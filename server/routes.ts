@@ -376,6 +376,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
             
+            // Check if note already exists (avoid duplicates in auto-sync)
+            const existingNote = await storage.getNoteByJoplinId(joplinId);
+            if (existingNote) {
+              continue; // Skip if already exists
+            }
+
             // Create note with parsed data
             const noteData = {
               joplinId,
