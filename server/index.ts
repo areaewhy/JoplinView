@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import "dotenv/config";
 
 export function createApp() {
   const app = express();
@@ -51,7 +52,7 @@ export async function startServer(app?: express.Express) {
 
       res.status(status).json({ message });
       throw err;
-    },
+    }
   );
 
   // importantly only setup vite in development and after
@@ -76,7 +77,7 @@ export async function startServer(app?: express.Express) {
     },
     () => {
       log(`serving on port ${port}`);
-    },
+    }
   );
 
   return server;

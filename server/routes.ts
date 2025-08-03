@@ -1,206 +1,238 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertNoteSchema } from "@shared/schema";
+import { insertNoteSchema, SyncStatus } from "@shared/schema";
 import { z } from "zod";
 import AWS from "aws-sdk";
 import matter from "gray-matter";
 import { getCachedNotes, setCachedNotes, isCacheValid } from "./cache";
+import { NoteData } from "./types";
 
 const parentId_filter = "ce3835780b164c92b8fa16a4edee5952";
+
+export async function getNotes(): Promise<[NoteData[], SyncStatus]> {
+  const status: SyncStatus = {
+    isConnected: false,
+    lastSyncTime: null,
+    totalNotes: 0,
+    storageUsed: "0 MB",
+    id: -1,
+  };
+
+  try {
+    // Get S3 configuration from environment variables
+    const bucketName = process.env.S3_BUCKET_NAME;
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+    const region = process.env.S3_REGION;
+    const endpoint = process.env.S3_ENDPOINT;
+
+    console.log(bucketName, accessKeyId, secretAccessKey, region, endpoint);
+
+    if (!bucketName || !accessKeyId || !secretAccessKey || !region) {
+      throw new Error(
+        "S3 configuration missing in environment variables. Required: S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION"
+      );
+    }
+
+    const notes: NoteData[] = [];
+
+    // Configure AWS SDK
+    const s3Config: any = {
+      accessKeyId,
+      secretAccessKey,
+      region,
+    };
+
+    // Add custom endpoint if configured
+    if (endpoint) {
+      s3Config.endpoint = endpoint;
+      s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
+    }
+
+    const s3 = new AWS.S3(s3Config);
+
+    // List all .md files in the bucket/bucket directory
+    const prefix = ""; //`${bucketName}/`;
+    const listParams = {
+      Bucket: bucketName,
+      Prefix: prefix,
+    };
+
+    const objects = await s3.listObjectsV2(listParams).promise();
+
+    if (!objects.Contents) {
+      console.warn("No files found in bucket");
+      return [[], status];
+    }
+
+    const mdFiles = objects.Contents.filter(
+      (obj) => obj.Key && obj.Key.endsWith(".md")
+    );
+
+    // Process each markdown file
+    for (const file of mdFiles) {
+      if (!file.Key) continue;
+
+      try {
+        const getParams = {
+          Bucket: bucketName,
+          Key: file.Key,
+        };
+
+        const data = await s3.getObject(getParams).promise();
+        const content = data.Body?.toString("utf-8") || "";
+
+        // First, quickly check if this is a revision file (starts with metadata immediately)
+        if (content.trim().startsWith("id:") && content.includes("type_:")) {
+          console.log(`Skipping revision file: ${file.Key}`);
+          continue;
+        }
+
+        // Parse Joplin note format
+        const lines = content.split("\n");
+        let bodyEndIndex = -1;
+
+        // Find where the metadata starts (look for 'id:' line)
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim().startsWith("id:")) {
+            bodyEndIndex = i - 1;
+            break;
+          }
+        }
+
+        // Extract body and metadata
+        const body: string =
+          bodyEndIndex > 0
+            ? lines
+                .slice(0, bodyEndIndex + 1)
+                .join("\n")
+                .trim()
+            : "";
+        const metadataLines =
+          bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
+
+        // Extract GUID from filename first
+        const joplinId: string = file.Key.replace(".md", "");
+
+        // Extract title early for duplicate checking
+        let title = joplinId;
+        if (body) {
+          const firstLine = body.split("\n")[0].trim();
+          if (firstLine && !firstLine.startsWith("#")) {
+            title = firstLine;
+          } else if (firstLine.startsWith("#")) {
+            title = firstLine.replace(/^#+\s*/, "");
+          }
+        }
+
+        // Check for duplicate titles before processing metadata
+        const allNotes = await storage.getAllNotes();
+        const existingNoteByTitle = allNotes.find((n) => n.title === title);
+        if (existingNoteByTitle) {
+          console.log(`Skipping duplicate title: ${title}`);
+          continue;
+        }
+
+        // Parse metadata into object
+        const metadata: Record<string, string> = {};
+        for (const line of metadataLines) {
+          const trimmed = line.trim();
+          if (trimmed && trimmed.includes(":")) {
+            const colonIndex = trimmed.indexOf(":");
+            const key = trimmed.substring(0, colonIndex).trim();
+            const value = trimmed.substring(colonIndex + 1).trim();
+            metadata[key] = value;
+          }
+        }
+
+        // Skip revisions and resources - only process actual notes
+        if (metadata.type_ !== "1") {
+          console.log(
+            `Skipping file ${file.Key}: type ${metadata.type_} (not a note)`
+          );
+          continue;
+        }
+
+        // only allow notes in the "Work" folder (parent_id: ce3835780b164c92b8fa16a4edee5952)
+        if (metadata.parent_id !== parentId_filter) {
+          continue;
+        }
+
+        // Extra check: if no body content, this might be a broken file
+        if (!body || body.trim().length === 0) {
+          console.log(`Skipping file ${file.Key}: no body content`);
+          continue;
+        }
+
+        // Create note with parsed data
+        const noteData: NoteData = {
+          joplinId,
+          title: title || joplinId,
+          body: body || "",
+          author: metadata.author || null,
+          source: metadata.source || null,
+          latitude: metadata.latitude || null,
+          longitude: metadata.longitude || null,
+          altitude: metadata.altitude || null,
+          completed: metadata.todo_completed === "1" || null,
+          due:
+            metadata.todo_due && metadata.todo_due !== "0"
+              ? new Date(parseInt(metadata.todo_due))
+              : null,
+          createdTime: metadata.created_time
+            ? new Date(metadata.created_time)
+            : null,
+          updatedTime: metadata.updated_time
+            ? new Date(metadata.updated_time)
+            : null,
+          s3Key: file.Key,
+          tags: [] as string[], // Joplin stores tags separately, we'll handle this later
+          size: file.Size,
+        };
+
+        notes.push(noteData);
+      } catch (fileError) {
+        console.error(`Error processing file ${file.Key}:`, fileError);
+      }
+    }
+
+    let storageUsed = 0;
+    for (const note of notes) {
+      storageUsed += note.size || 0;
+    }
+
+    status.isConnected = true;
+    status.lastSyncTime = new Date();
+    status.totalNotes = notes.length;
+    status.storageUsed = `${(storageUsed / 1024 / 1024).toFixed(2)} MB`;
+
+    return [notes, status];
+  } catch (error) {
+    console.error("fetching files failes", error);
+  }
+
+  return [[], status];
+}
 
 export function registerRoutes(app: Express): Server {
   // Notes sync endpoint
   app.post("/api/notes/sync", async (req, res) => {
     try {
-      // Get S3 configuration from environment variables
-      const bucketName = process.env.S3_BUCKET_NAME;
-      const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-      const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-      const region = process.env.S3_REGION;
-      const endpoint = process.env.S3_ENDPOINT;
+      let processedCount = 0;
+      let storageUsed = 0;
 
-      if (!bucketName || !accessKeyId || !secretAccessKey || !region) {
-        return res.status(400).json({
-          message:
-            "S3 configuration missing in environment variables. Required: S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION",
-        });
-      }
-
-      // Configure AWS SDK
-      const s3Config: any = {
-        accessKeyId,
-        secretAccessKey,
-        region,
-      };
-
-      // Add custom endpoint if configured
-      if (endpoint) {
-        s3Config.endpoint = endpoint;
-        s3Config.s3ForcePathStyle = true; // Required for most S3-compatible services
-      }
-
-      const s3 = new AWS.S3(s3Config);
-
-      // List all .md files in the bucket/bucket directory
-      const prefix = ""; //`${bucketName}/`;
-      const listParams = {
-        Bucket: bucketName,
-        Prefix: prefix,
-      };
-
-      const objects = await s3.listObjectsV2(listParams).promise();
-
-      if (!objects.Contents) {
-        return res.json({ message: "No files found in bucket", notesCount: 0 });
-      }
-
-      const mdFiles = objects.Contents.filter(
-        (obj) => obj.Key && obj.Key.endsWith(".md"),
-      );
+      const [notes, status] = (await getNotes()) ?? [];
 
       // Clear existing notes
       await storage.deleteAllNotes();
 
-      let processedCount = 0;
-      let storageUsed = 0;
-
-      // Process each markdown file
-      for (const file of mdFiles) {
-        if (!file.Key) continue;
-
-        try {
-          const getParams = {
-            Bucket: bucketName,
-            Key: file.Key,
-          };
-
-          const data = await s3.getObject(getParams).promise();
-          const content = data.Body?.toString("utf-8") || "";
-
-          // First, quickly check if this is a revision file (starts with metadata immediately)
-          if (content.trim().startsWith("id:") && content.includes("type_:")) {
-            console.log(`Skipping revision file: ${file.Key}`);
-            continue;
-          }
-
-          // Parse Joplin note format
-          const lines = content.split("\n");
-          let bodyEndIndex = -1;
-
-          // Find where the metadata starts (look for 'id:' line)
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].trim().startsWith("id:")) {
-              bodyEndIndex = i - 1;
-              break;
-            }
-          }
-
-          // Extract body and metadata
-          const body =
-            bodyEndIndex > 0
-              ? lines
-                  .slice(0, bodyEndIndex + 1)
-                  .join("\n")
-                  .trim()
-              : "";
-          const metadataLines =
-            bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
-
-          // Extract GUID from filename first
-          const joplinId = file.Key.replace(".md", "");
-
-          // Extract title early for duplicate checking
-          let title = joplinId;
-          if (body) {
-            const firstLine = body.split("\n")[0].trim();
-            if (firstLine && !firstLine.startsWith("#")) {
-              title = firstLine;
-            } else if (firstLine.startsWith("#")) {
-              title = firstLine.replace(/^#+\s*/, "");
-            }
-          }
-
-          // Check for duplicate titles before processing metadata
-          const allNotes = await storage.getAllNotes();
-          const existingNoteByTitle = allNotes.find((n) => n.title === title);
-          if (existingNoteByTitle) {
-            console.log(`Skipping duplicate title: ${title}`);
-            continue;
-          }
-
-          // Parse metadata into object
-          const metadata: any = {};
-          for (const line of metadataLines) {
-            const trimmed = line.trim();
-            if (trimmed && trimmed.includes(":")) {
-              const colonIndex = trimmed.indexOf(":");
-              const key = trimmed.substring(0, colonIndex).trim();
-              const value = trimmed.substring(colonIndex + 1).trim();
-              metadata[key] = value;
-            }
-          }
-
-          // Skip revisions and resources - only process actual notes
-          if (metadata.type_ !== "1") {
-            console.log(
-              `Skipping file ${file.Key}: type ${metadata.type_} (not a note)`,
-            );
-            continue;
-          }
-
-          // only allow notes in the "Work" folder (parent_id: ce3835780b164c92b8fa16a4edee5952)
-          if (metadata.parent_id !== parentId_filter) {
-            continue;
-          }
-
-          // Extra check: if no body content, this might be a broken file
-          if (!body || body.trim().length === 0) {
-            console.log(`Skipping file ${file.Key}: no body content`);
-            continue;
-          }
-
-          // Create note with parsed data
-          const noteData = {
-            joplinId,
-            title: title || joplinId,
-            body: body || "",
-            author: metadata.author || null,
-            source: metadata.source || null,
-            latitude: metadata.latitude || null,
-            longitude: metadata.longitude || null,
-            altitude: metadata.altitude || null,
-            completed: metadata.todo_completed === "1" || null,
-            due:
-              metadata.todo_due && metadata.todo_due !== "0"
-                ? new Date(parseInt(metadata.todo_due))
-                : null,
-            createdTime: metadata.created_time
-              ? new Date(metadata.created_time)
-              : null,
-            updatedTime: metadata.updated_time
-              ? new Date(metadata.updated_time)
-              : null,
-            s3Key: file.Key,
-            tags: [], // Joplin stores tags separately, we'll handle this later
-          };
-
-          await storage.createNote(noteData);
-          processedCount++;
-          storageUsed += file.Size || 0;
-        } catch (fileError) {
-          console.error(`Error processing file ${file.Key}:`, fileError);
-          // Continue processing other files
-        }
+      for (const noteData of notes) {
+        await storage.createNote(noteData);
       }
 
       // Update sync status
-      const syncStatus = await storage.updateSyncStatus({
-        lastSyncTime: new Date(),
-        totalNotes: processedCount,
-        storageUsed: `${(storageUsed / 1024 / 1024).toFixed(2)} MB`,
-        isConnected: true,
-      });
+      const syncStatus = await storage.updateSyncStatus(status);
 
       // Cache the synced data
       const allNotes = await storage.getAllNotes();
@@ -241,191 +273,21 @@ export function registerRoutes(app: Express): Server {
         }
       }
 
-      const notes = await storage.getAllNotes();
+      const cachedNotes = await storage.getAllNotes();
 
       // If no notes exist, perform auto-sync
-      if (notes.length === 0) {
+      if (cachedNotes.length === 0) {
         console.log("No notes found in cache, performing auto-sync...");
-
-        // Get S3 configuration from environment variables
-        const bucketName = process.env.S3_BUCKET_NAME;
-        const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-        const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-        const region = process.env.S3_REGION;
-        const endpoint = process.env.S3_ENDPOINT;
-
-        if (!bucketName || !accessKeyId || !secretAccessKey || !region) {
-          console.log("S3 configuration missing, skipping auto-sync");
-          return false;
-        }
-
-        // Configure AWS SDK
-        const s3Config: any = {
-          accessKeyId,
-          secretAccessKey,
-          region,
-        };
-
-        // Add custom endpoint if configured
-        if (endpoint) {
-          s3Config.endpoint = endpoint;
-          s3Config.s3ForcePathStyle = true;
-        }
-
-        const s3 = new AWS.S3(s3Config);
-
-        // List all .md files in the bucket (look in root directory)
-        const listParams = {
-          Bucket: bucketName,
-          Prefix: "", // Empty prefix to search from root
-        };
-
-        const objects = await s3.listObjectsV2(listParams).promise();
-
-        if (!objects.Contents) {
-          console.log("No files found in S3 bucket");
-          return false;
-        }
-
-        const mdFiles = objects.Contents.filter(
-          (obj) => obj.Key && obj.Key.endsWith(".md"),
-        );
 
         let processedCount = 0;
         let storageUsed = 0;
 
-        // Process each markdown file
-        for (const file of mdFiles) {
-          if (!file.Key) continue;
+        const [notes, status] = (await getNotes()) ?? [];
 
-          try {
-            const getParams = {
-              Bucket: bucketName,
-              Key: file.Key,
-            };
-
-            const data = await s3.getObject(getParams).promise();
-            const content = data.Body?.toString("utf-8") || "";
-
-            // First, quickly check if this is a revision file
-            if (
-              content.trim().startsWith("id:") &&
-              content.includes("type_:")
-            ) {
-              continue;
-            }
-
-            // Parse Joplin note format
-            const lines = content.split("\n");
-            let bodyEndIndex = -1;
-
-            // Find where the metadata starts
-            for (let i = 0; i < lines.length; i++) {
-              if (lines[i].trim().startsWith("id:")) {
-                bodyEndIndex = i - 1;
-                break;
-              }
-            }
-
-            // Extract body and metadata
-            const body =
-              bodyEndIndex > 0
-                ? lines
-                    .slice(0, bodyEndIndex + 1)
-                    .join("\n")
-                    .trim()
-                : "";
-            const metadataLines =
-              bodyEndIndex > 0 ? lines.slice(bodyEndIndex + 1) : lines;
-
-            // Parse metadata into object
-            const metadata: any = {};
-            for (const line of metadataLines) {
-              const trimmed = line.trim();
-              if (trimmed && trimmed.includes(":")) {
-                const colonIndex = trimmed.indexOf(":");
-                const key = trimmed.substring(0, colonIndex).trim();
-                const value = trimmed.substring(colonIndex + 1).trim();
-                metadata[key] = value;
-              }
-            }
-
-            // Skip revisions and resources - only process actual notes
-            if (metadata.type_ !== "1") {
-              continue;
-            }
-
-            // Extra check: if no body content, skip
-            if (!body || body.trim().length === 0) {
-              continue;
-            }
-
-            // Extract GUID from filename first
-            const joplinId = file.Key.replace(".md", "");
-
-            // Extract title from body
-            let title = joplinId;
-            if (body) {
-              const firstLine = body.split("\n")[0].trim();
-              if (firstLine && !firstLine.startsWith("#")) {
-                title = firstLine;
-              } else if (firstLine.startsWith("#")) {
-                title = firstLine.replace(/^#+\s*/, "");
-              }
-            }
-
-            // only allow notes in the "Work" folder (parent_id: ce3835780b164c92b8fa16a4edee5952)
-            if (metadata.parent_id !== parentId_filter) {
-              continue;
-            }
-
-            // Check if note already exists by joplinId OR title (avoid duplicates)
-            const existingNoteById = await storage.getNoteByJoplinId(joplinId);
-            if (existingNoteById) {
-              continue; // Skip if already exists by ID
-            }
-
-            // Also check for duplicate titles (in case same content has different joplinIds)
-            const allNotes = await storage.getAllNotes();
-            const existingNoteByTitle = allNotes.find(
-              (n) => n.title === (title || joplinId),
-            );
-            if (existingNoteByTitle) {
-              console.log(`Skipping duplicate title: ${title || joplinId}`);
-              continue; // Skip if same title already exists
-            }
-
-            // Create note with parsed data
-            const noteData = {
-              joplinId,
-              title: title || joplinId,
-              body: body || "",
-              author: metadata.author || null,
-              source: metadata.source || null,
-              latitude: metadata.latitude || null,
-              longitude: metadata.longitude || null,
-              altitude: metadata.altitude || null,
-              completed: metadata.todo_completed === "1" || null,
-              due:
-                metadata.todo_due && metadata.todo_due !== "0"
-                  ? new Date(parseInt(metadata.todo_due))
-                  : null,
-              createdTime: metadata.created_time
-                ? new Date(metadata.created_time)
-                : null,
-              updatedTime: metadata.updated_time
-                ? new Date(metadata.updated_time)
-                : null,
-              s3Key: file.Key,
-              tags: [],
-            };
-
-            await storage.createNote(noteData);
-            processedCount++;
-            storageUsed += file.Size || 0;
-          } catch (fileError) {
-            console.error(`Error processing file ${file.Key}:`, fileError);
-          }
+        for (const noteData of notes) {
+          await storage.createNote(noteData);
+          processedCount++;
+          storageUsed += noteData.size || 0;
         }
 
         // Update sync status
@@ -440,7 +302,9 @@ export function registerRoutes(app: Express): Server {
         const allNotes = await storage.getAllNotes();
         await setCachedNotes(allNotes, syncStatus);
 
-        console.log(`Auto-sync completed: ${processedCount} notes loaded and cached`);
+        console.log(
+          `Auto-sync completed: ${processedCount} notes loaded and cached`
+        );
         return true;
       }
 
@@ -511,7 +375,7 @@ export function registerRoutes(app: Express): Server {
           totalNotes: 0,
           storageUsed: "0 MB",
           isConnected: isS3Configured,
-        },
+        }
       );
     } catch (error) {
       res.status(500).json({ message: "Failed to get sync status" });
