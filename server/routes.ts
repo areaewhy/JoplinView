@@ -5,6 +5,7 @@ import { insertNoteSchema } from "@shared/schema";
 import { z } from "zod";
 import AWS from "aws-sdk";
 import matter from "gray-matter";
+import { getCachedNotes, setCachedNotes, isCacheValid } from "./cache";
 
 const parentId_filter = "ce3835780b164c92b8fa16a4edee5952";
 
@@ -194,12 +195,16 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Update sync status
-      await storage.updateSyncStatus({
+      const syncStatus = await storage.updateSyncStatus({
         lastSyncTime: new Date(),
         totalNotes: processedCount,
         storageUsed: `${(storageUsed / 1024 / 1024).toFixed(2)} MB`,
         isConnected: true,
       });
+
+      // Cache the synced data
+      const allNotes = await storage.getAllNotes();
+      await setCachedNotes(allNotes, syncStatus);
 
       res.json({
         message: "Sync completed successfully",
@@ -218,6 +223,24 @@ export function registerRoutes(app: Express): Server {
   // Function to perform auto-sync if needed
   async function autoSyncIfNeeded() {
     try {
+      // Check if we have valid cached data first
+      if (await isCacheValid()) {
+        const cachedData = await getCachedNotes();
+        if (cachedData && cachedData.notes.length > 0) {
+          // Load cached notes into memory storage
+          await storage.deleteAllNotes();
+          for (const note of cachedData.notes) {
+            await storage.createNote(note);
+          }
+          // Update sync status from cache
+          if (cachedData.syncStatus) {
+            await storage.updateSyncStatus(cachedData.syncStatus);
+          }
+          console.log(`Loaded ${cachedData.notes.length} notes from cache`);
+          return true;
+        }
+      }
+
       const notes = await storage.getAllNotes();
 
       // If no notes exist, perform auto-sync
@@ -406,14 +429,18 @@ export function registerRoutes(app: Express): Server {
         }
 
         // Update sync status
-        await storage.updateSyncStatus({
+        const syncStatus = await storage.updateSyncStatus({
           lastSyncTime: new Date(),
           totalNotes: processedCount,
           storageUsed: `${(storageUsed / 1024 / 1024).toFixed(2)} MB`,
           isConnected: true,
         });
 
-        console.log(`Auto-sync completed: ${processedCount} notes loaded`);
+        // Cache the synced data
+        const allNotes = await storage.getAllNotes();
+        await setCachedNotes(allNotes, syncStatus);
+
+        console.log(`Auto-sync completed: ${processedCount} notes loaded and cached`);
         return true;
       }
 
