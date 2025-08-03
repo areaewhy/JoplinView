@@ -282,7 +282,7 @@ export function registerRoutes(app: Express): Server {
         let processedCount = 0;
         let storageUsed = 0;
 
-        const notes = (await getNotes()) ?? [];
+        const [notes, status] = (await getNotes()) ?? [];
 
         for (const noteData of notes) {
           await storage.createNote(noteData);
