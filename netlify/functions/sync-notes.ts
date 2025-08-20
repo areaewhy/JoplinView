@@ -16,5 +16,5 @@ export default async (req: Request) => {
 
 // This special comment tells Netlify to run this function on a schedule
 export const config: Config = {
-  schedule: "@hourly",
+  schedule: "0 0 1 * *", // monthly
 };
